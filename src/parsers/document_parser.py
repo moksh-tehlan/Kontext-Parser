@@ -111,15 +111,11 @@ class DocumentParser(BaseParser):
                 chonkie_chunks = chunker.chunk(page_text)
                 
                 for chonkie_chunk in chonkie_chunks:
-                    # Create comprehensive metadata for this chunk
+                    # Create metadata with important generic fields first
                     chunk_metadata = {
-                        "page_number": page_number,
-                        "chunk_index": global_chunk_index,
-                        "token_count": chonkie_chunk.token_count,
-                        "chunk_start_index": chonkie_chunk.start_index,
-                        "chunk_end_index": chonkie_chunk.end_index,
-                        # Request metadata
+                        # Important generic fields for all parsers
                         "knowledge_id": request.content_id,
+                        "processing_timestamp": request.timestamp,
                         "project_id": request.project_id,
                         "user_id": request.user_id,
                         "file_name": request.file_name,
@@ -127,17 +123,21 @@ class DocumentParser(BaseParser):
                         "file_size": request.file_size,
                         "s3_bucket": request.s3_bucket,
                         "s3_key": request.s3_key,
-                        "processing_timestamp": request.timestamp
+                        
+                        # Chunking metadata
+                        "chunk_index": global_chunk_index,
+                        "token_count": chonkie_chunk.token_count,
+                        "chunk_start_index": chonkie_chunk.start_index,
+                        "chunk_end_index": chonkie_chunk.end_index,
+                        
+                        # Format-specific data in additional_payload
+                        "additional_payload": {
+                            # PDF/document specific metadata
+                            "page_number": page_number,
+                            **{f"doc_{key}": value for key, value in doc_metadata.items() if value},
+                            **page_metadata
+                        }
                     }
-                    
-                    # Add document metadata with doc_ prefix
-                    chunk_metadata.update({
-                        f"doc_{key}": value for key, value in doc_metadata.items()
-                        if value  # Only add non-empty values
-                    })
-                    
-                    # Add page metadata
-                    chunk_metadata.update(page_metadata)
                     
                     # Create SpringAIDocument
                     spring_ai_doc = SpringAIDocument(
