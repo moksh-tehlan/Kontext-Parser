@@ -3,6 +3,7 @@ from typing import List
 
 from .models.messages import ProcessRequestMessage, SpringAIDocument, ContentType
 from .parsers.document_parser import DocumentParser
+from .parsers.web_parser import WebParser
 from .services.s3_service import S3ServiceInterface
 from .exceptions.processing_exceptions import ProcessingException
 
@@ -23,9 +24,9 @@ class Handler:
         """
         # Initialize parsers with dependencies they need
         self.document_parser = DocumentParser(s3_service)
+        self.web_parser = WebParser()
         # Future parsers:
         # self.image_parser = ImageParser(s3_service)
-        # self.web_parser = WebParser()
     
     def handle(self, request: ProcessRequestMessage) -> List[SpringAIDocument]:
         """
@@ -41,10 +42,12 @@ class Handler:
             ProcessingException: If processing fails
         """
         try:
-            logger.info(f"Routing {request.content_type} request: {request.file_name}")
+            logger.info(f"Routing {request.content_type} request: {request.name}")
             
             if request.content_type == ContentType.DOCUMENT:
                 return self.document_parser.parse(request)
+            elif request.content_type == ContentType.WEB:
+                return self.web_parser.parse(request)
             elif request.content_type == ContentType.IMAGE:
                 raise ProcessingException(
                     "Image processing not yet implemented",

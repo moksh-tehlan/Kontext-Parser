@@ -44,7 +44,7 @@ class DocumentParser(BaseParser):
         """
         temp_file_path = None
         try:
-            logger.info(f"Processing document: {request.file_name} from S3")
+            logger.info(f"Processing document: {request.name} from S3")
             
             # Download file from S3
             file_content = self.s3_service.download_file(
@@ -53,7 +53,7 @@ class DocumentParser(BaseParser):
             )
             
             # Create temporary file with proper extension
-            file_extension = request.file_name.split('.')[-1] if '.' in request.file_name else 'bin'
+            file_extension = request.name.split('.')[-1] if '.' in request.name else 'bin'
             with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_file:
                 temp_file.write(file_content)
                 temp_file_path = temp_file.name
@@ -73,7 +73,7 @@ class DocumentParser(BaseParser):
                 "creation_date": doc.metadata.get("creationDate", ""),
                 "modification_date": doc.metadata.get("modDate", ""),
                 "total_pages": len(doc),
-                "source": request.file_name
+                "source": request.name
             }
             
             # Initialize Chonkie SentenceChunker
@@ -116,13 +116,13 @@ class DocumentParser(BaseParser):
                         # Important generic fields for all parsers
                         "knowledge_id": request.content_id,
                         "processing_timestamp": request.timestamp,
-                        "project_id": request.project_id,
-                        "user_id": request.user_id,
-                        "file_name": request.file_name,
+                        # "project_id": request.project_id,
+                        # "user_id": request.user_id,
+                        "name": request.name,
                         "mime_type": request.mime_type,
                         "file_size": request.file_size,
-                        "s3_bucket": request.s3_bucket,
-                        "s3_key": request.s3_key,
+                        # "s3_bucket": request.s3_bucket,
+                        # "s3_key": request.s3_key,
                         
                         # Chunking metadata
                         "chunk_index": global_chunk_index,
@@ -153,7 +153,7 @@ class DocumentParser(BaseParser):
             
         except Exception as e:
             logger.error(f"Error processing document: {e}")
-            raise Exception(f"Failed to parse document {request.file_name}: {str(e)}")
+            raise Exception(f"Failed to parse document {request.name}: {str(e)}")
             
         finally:
             # Clean up temporary file

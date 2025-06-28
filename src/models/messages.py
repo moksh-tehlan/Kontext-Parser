@@ -16,6 +16,7 @@ class ContentType(str, Enum):
     IMAGE = "image"
     VIDEO = "video"
     AUDIO = "audio"
+    WEB = "web"
 
 
 class BaseMessage(BaseModel):
@@ -24,18 +25,19 @@ class BaseMessage(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat(), alias="timestamp")
     content_id: str = Field(alias="contentId")
     content_type: ContentType = Field(alias="contentType")
-    
+
     model_config = {"populate_by_name": True}
 
 
 class ProcessRequestMessage(BaseMessage):
     event_type: EventType = Field(default=EventType.CONTENT_PROCESS_REQUEST, alias="eventType")
-    file_name: str = Field(alias="fileName")
-    s3_key: str = Field(alias="s3Key")
-    s3_bucket: str = Field(alias="s3Bucket")
+    name: str = Field(alias="name")
+    s3_key: Optional[str] = Field(default=None, alias="s3Key")
+    s3_bucket: Optional[str] = Field(default=None, alias="s3Bucket")
     mime_type: str = Field(alias="mimeType")
-    file_size: int = Field(alias="fileSize")
+    file_size: Optional[int] = Field(default=None, alias="fileSize")
     project_id: str = Field(alias="projectId")
+    web_url: Optional[str] = Field(default=None, alias="webUrl")
     user_id: str = Field(alias="userId")
 
 
