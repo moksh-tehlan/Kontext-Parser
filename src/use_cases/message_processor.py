@@ -11,7 +11,7 @@ from src.models.messages import (
     EventType
 )
 from src.repositories.sqs_repository import SQSRepositoryInterface
-from src.services.document_service import DocumentServiceInterface
+from src.handler import Handler
 from src.services.s3_service import S3ServiceInterface
 from src.config.settings import AppConfig
 from src.exceptions.processing_exceptions import ProcessingException
@@ -24,12 +24,12 @@ class MessageProcessor:
         self,
         config: AppConfig,
         sqs_repository: SQSRepositoryInterface,
-        document_service: DocumentServiceInterface,
+        handler: Handler,
         s3_service: S3ServiceInterface
     ):
         self.config = config
         self.sqs_repository = sqs_repository
-        self.document_service = document_service
+        self.handler = handler
         self.s3_service = s3_service
     
     def process_messages(self) -> None:
@@ -53,9 +53,9 @@ class MessageProcessor:
             
             logger.info(f"Processing request for content ID: {request.content_id}")
             
-            # Process the document
+            # Process the request using handler
             start_time = datetime.utcnow()
-            processed_documents = self.document_service.process_document(request)
+            processed_documents = self.handler.handle(request)
             end_time = datetime.utcnow()
             processing_time_ms = int((end_time - start_time).total_seconds() * 1000)
             

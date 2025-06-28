@@ -3,3 +3,5 @@ python-dotenv==1.0.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 typing-extensions==4.8.0
+PyMuPDF==1.26.1
+chonkie

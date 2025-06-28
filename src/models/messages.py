@@ -57,14 +57,6 @@ class ProcessFailureMessage(BaseMessage):
     failed_step: str = Field(alias="failedStep")
 
 
-class SpringAIDocumentMetadata(BaseModel):
-    knowledge_id: str = Field(alias="knowledge_id")
-    title: str
-    author: Optional[str] = None
-    chunk_index: int = Field(alias="chunk_index")
-    source: str
-
-
 class SpringAIDocument(BaseModel):
     content: str
-    metadata: SpringAIDocumentMetadata
+    metadata: Dict[str, Any]

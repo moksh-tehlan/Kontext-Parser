@@ -7,7 +7,7 @@ sys.path.append(str(Path(__file__).parent / "src"))
 
 from src.config.settings import get_config
 from src.repositories.sqs_repository import SQSRepository
-from src.services.document_service import MockDocumentService
+from src.handler import Handler
 from src.services.s3_service import S3Service
 from src.use_cases.message_processor import MessageProcessor
 
@@ -34,14 +34,14 @@ def main():
         
         # Initialize dependencies
         sqs_repository = SQSRepository(config)
-        document_service = MockDocumentService()
         s3_service = S3Service(config)
+        handler = Handler(s3_service=s3_service)
         
         # Initialize message processor
         processor = MessageProcessor(
             config=config,
             sqs_repository=sqs_repository,
-            document_service=document_service,
+            handler=handler,
             s3_service=s3_service
         )
         
