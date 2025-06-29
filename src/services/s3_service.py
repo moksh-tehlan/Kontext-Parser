@@ -3,6 +3,7 @@ from typing import List
 import boto3
 import json
 import logging
+import os
 from botocore.exceptions import ClientError
 
 from src.config.settings import AppConfig
@@ -25,12 +26,18 @@ class S3ServiceInterface(ABC):
 class S3Service(S3ServiceInterface):
     def __init__(self, config: AppConfig):
         self.config = config
-        self.s3_client = boto3.client(
-            's3',
-            region_name=config.aws.region,
-            aws_access_key_id=config.aws.access_key_id,
-            aws_secret_access_key=config.aws.secret_access_key
-        )
+        # Check if running in Lambda (AWS_LAMBDA_FUNCTION_NAME is set by Lambda)
+        if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+            # In Lambda: use IAM role, don't specify credentials
+            self.s3_client = boto3.client('s3', region_name=config.aws.region)
+        else:
+            # Locally: use explicit credentials
+            self.s3_client = boto3.client(
+                's3',
+                region_name=config.aws.region,
+                aws_access_key_id=config.aws.access_key_id,
+                aws_secret_access_key=config.aws.secret_access_key
+            )
     
     def upload_processed_documents(self, documents: List[SpringAIDocument], content_id: str) -> str:
         try:

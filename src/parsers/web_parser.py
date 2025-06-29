@@ -36,22 +36,34 @@ class WebParser(BaseParser):
             Exception: If crawling fails
         """
         try:
+            logger.info(f"=== WEB PARSER DEBUG START ===")
             logger.info(f"Processing web URL: {request.web_url}")
+            logger.info(f"Request content_type: {request.content_type}")
+            logger.info(f"Request name: {request.name}")
             
             # Run the async crawling
+            logger.info("Starting web crawling...")
             try:
                 loop = asyncio.get_running_loop()
+                logger.info("Running in async context, using ThreadPoolExecutor")
                 # If we're already in an async context, create a task
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(asyncio.run, self._crawl_url(request.web_url))
                     web_content = future.result()
             except RuntimeError:
+                logger.info("No running async loop, using asyncio.run directly")
                 # No running loop, safe to use asyncio.run
                 web_content = asyncio.run(self._crawl_url(request.web_url))
             
+            logger.info(f"Crawling completed. Result: {web_content}")
+            
             if not web_content:
+                logger.error("web_content is None or empty!")
                 raise Exception("Failed to extract content from web URL")
+            
+            logger.info(f"Web content success: {web_content.get('success')}")
+            logger.info(f"Web content keys: {list(web_content.keys())}")
             
             # Extract metadata from the crawl result
             web_metadata = {
@@ -61,8 +73,20 @@ class WebParser(BaseParser):
                 "content_length": len(web_content.get("markdown", "")),
                 "success": web_content.get("success", False)
             }
+            logger.info(f"Web metadata: {web_metadata}")
+            
+            # Get the markdown content for chunking
+            content_text = web_content.get("markdown", "").strip()
+            logger.info(f"Content text length: {len(content_text)}")
+            logger.info(f"Content text preview (first 200 chars): {content_text[:200] if content_text else 'EMPTY'}")
+            
+            if not content_text:
+                logger.warning(f"No content extracted from URL: {request.web_url}")
+                logger.warning(f"Raw web_content: {web_content}")
+                return []
             
             # Initialize Chonkie SentenceChunker
+            logger.info("Initializing Chonkie SentenceChunker...")
             chunker = SentenceChunker(
                 tokenizer_or_token_counter="gpt2",
                 chunk_size=chunk_size,
@@ -73,17 +97,13 @@ class WebParser(BaseParser):
             spring_ai_documents = []
             global_chunk_index = 0
             
-            # Get the markdown content for chunking
-            content_text = web_content.get("markdown", "").strip()
-            
-            if not content_text:
-                logger.warning(f"No content extracted from URL: {request.s3_key}")
-                return []
-            
             # Use Chonkie to chunk the web content
+            logger.info("Starting content chunking...")
             chonkie_chunks = chunker.chunk(content_text)
+            logger.info(f"Chonkie created {len(chonkie_chunks)} chunks")
             
             for chonkie_chunk in chonkie_chunks:
+                logger.info(f"Processing chunk {global_chunk_index}: {len(chonkie_chunk.text)} chars")
                 # Create metadata with important generic fields first
                 chunk_metadata = {
                     # Important generic fields for all parsers
@@ -122,12 +142,17 @@ class WebParser(BaseParser):
                 spring_ai_documents.append(spring_ai_doc)
                 global_chunk_index += 1
             
+            logger.info(f"=== WEB PARSER DEBUG END ===")
             logger.info(f"Successfully processed web URL into {len(spring_ai_documents)} chunks")
             return spring_ai_documents
             
         except Exception as e:
+            logger.error(f"=== WEB PARSER ERROR ===")
             logger.error(f"Error processing web URL: {e}")
-            raise Exception(f"Failed to parse web URL {request.s3_key}: {str(e)}")
+            logger.error(f"Exception type: {type(e)}")
+            import traceback
+            logger.error(f"Stack trace: {traceback.format_exc()}")
+            raise Exception(f"Failed to parse web URL {request.web_url}: {str(e)}")
     
     async def _crawl_url(self, url: str) -> Dict[str, Any]:
         """
@@ -140,12 +165,49 @@ class WebParser(BaseParser):
             Dict containing the crawled content and metadata
         """
         try:
-            # Configure browser for crawling
+            logger.info(f"=== CRAWL4AI DEBUG START for {url} ===")
+            
+            # Configure browser for crawling (Lambda-compatible)
             browser_config = BrowserConfig(
-                verbose=True,  # Enable verbose for debugging
+                verbose=False,  # Reduce verbosity for Lambda
                 headless=True,
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                # Lambda-specific Chrome flags to handle sandbox restrictions
+                extra_args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox", 
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-gpu-compositing",
+                    "--disable-software-rasterizer",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-features=TranslateUI",
+                    "--disable-ipc-flooding-protection",
+                    "--disable-extensions",
+                    "--disable-default-apps",
+                    "--disable-sync",
+                    "--metrics-recording-only",
+                    "--no-first-run",
+                    "--safebrowsing-disable-auto-update",
+                    "--disable-component-extensions-with-background-pages",
+                    "--disable-background-networking",
+                    "--disable-component-update",
+                    "--disable-client-side-phishing-detection",
+                    "--disable-hang-monitor",
+                    "--disable-popup-blocking",
+                    "--disable-prompt-on-repost",
+                    "--ignore-certificate-errors",
+                    "--ignore-ssl-errors",
+                    "--ignore-certificate-errors-spki-list",
+                    "--disable-web-security",
+                    "--allow-running-insecure-content",
+                    "--disable-features=VizDisplayCompositor",
+                    "--single-process"  # Run in single process mode for Lambda
+                ]
             )
+            logger.info(f"Browser config created")
             
             # Configure crawling behavior with minimal settings
             run_config = CrawlerRunConfig(
@@ -157,15 +219,42 @@ class WebParser(BaseParser):
                 screenshot=False,
                 pdf=False
             )
+            logger.info(f"Run config created")
             
+            logger.info("Creating AsyncWebCrawler...")
             async with AsyncWebCrawler(config=browser_config) as crawler:
+                logger.info(f"Starting crawl for URL: {url}")
                 result = await crawler.arun(url=url, config=run_config)
                 
-                logger.info(f"Crawl result for {url}: success={result.success}")
-                if hasattr(result, 'markdown') and result.markdown:
-                    logger.info(f"Markdown length: {len(result.markdown)}")
-                if hasattr(result, 'html') and result.html:
-                    logger.info(f"HTML length: {len(result.html)}")
+                logger.info(f"=== CRAWL RESULT ===")
+                logger.info(f"URL: {url}")
+                logger.info(f"Success: {result.success}")
+                logger.info(f"Status code: {getattr(result, 'status_code', 'N/A')}")
+                logger.info(f"Error message: {getattr(result, 'error_message', 'N/A')}")
+                
+                if hasattr(result, 'markdown'):
+                    logger.info(f"Markdown exists: {result.markdown is not None}")
+                    if result.markdown:
+                        logger.info(f"Markdown length: {len(result.markdown)}")
+                        logger.info(f"Markdown preview (first 200 chars): {result.markdown[:200]}")
+                    else:
+                        logger.warning("Markdown is None or empty!")
+                else:
+                    logger.warning("Result has no markdown attribute!")
+                    
+                if hasattr(result, 'html'):
+                    logger.info(f"HTML exists: {result.html is not None}")
+                    if result.html:
+                        logger.info(f"HTML length: {len(result.html)}")
+                    else:
+                        logger.warning("HTML is None or empty!")
+                else:
+                    logger.warning("Result has no html attribute!")
+                
+                if hasattr(result, 'metadata') and result.metadata:
+                    logger.info(f"Metadata: {result.metadata}")
+                else:
+                    logger.warning("No metadata found!")
                 
                 return {
                     "success": result.success,
@@ -177,7 +266,11 @@ class WebParser(BaseParser):
                 }
                 
         except Exception as e:
-            logger.error(f"Crawl4AI error for URL {url}: {e}")
+            logger.error(f"=== CRAWL4AI ERROR for URL {url} ===")
+            logger.error(f"Error: {e}")
+            logger.error(f"Exception type: {type(e)}")
+            import traceback
+            logger.error(f"Stack trace: {traceback.format_exc()}")
             return {
                 "success": False,
                 "markdown": "",

@@ -1,0 +1,77 @@
+# Build stage
+FROM python:3.11-slim AS builder
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+# Create a project directory inside /app
+WORKDIR /app
+
+# Install system dependencies required for PyMuPDF, Playwright, and other packages
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libffi-dev \
+    wget \
+    gnupg \
+    libnss3 \
+    libnspr4 \
+    libatk-bridge2.0-0 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libxss1 \
+    libasound2 \
+    libatspi2.0-0 \
+    libgtk-3-0 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy Python packages from builder
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+# Install Playwright browser (this is still large but necessary)
+RUN python -m playwright install chromium --with-deps && \
+    python -m playwright install-deps && \
+    crawl4ai-setup && \
+    (test -d /root/.cache/ms-playwright && chmod -R 755 /root/.cache/ms-playwright || true)
+
+# Copy application code
+COPY . .
+
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Expose port (adjust as needed)
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
+
+# Default command (adjust as needed for your application)
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
