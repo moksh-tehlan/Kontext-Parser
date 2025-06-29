@@ -209,15 +209,16 @@ class WebParser(BaseParser):
             )
             logger.info(f"Browser config created")
             
-            # Configure crawling behavior with minimal settings
+            # Configure crawling behavior with minimal settings for Lambda
             run_config = CrawlerRunConfig(
                 word_count_threshold=1,
                 exclude_external_links=False,
                 cache_mode=CacheMode.DISABLED,
-                page_timeout=20000,  # 20 seconds timeout
-                delay_before_return_html=1.0,  # Wait 1 second
+                page_timeout=30000,  # 30 seconds timeout for Lambda
+                delay_before_return_html=2.0,  # Wait 2 seconds for content to load
                 screenshot=False,
-                pdf=False
+                pdf=False,
+                only_text=True,  # Extract only text content
             )
             logger.info(f"Run config created")
             
