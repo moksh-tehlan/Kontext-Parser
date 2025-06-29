@@ -1,14 +1,12 @@
 import json
 import logging
-import os
 import traceback
 from typing import Dict, Any, List
 from datetime import datetime
-import boto3
-from botocore.exceptions import ClientError
 
 from src.handler import Handler
 from src.services.s3_service import S3Service
+from src.repositories.sqs_repository import SQSRepository
 from src.models.messages import ProcessRequestMessage, ProcessSuccessMessage, ProcessFailureMessage
 from src.exceptions.processing_exceptions import ProcessingException
 from src.config.settings import AppConfig
@@ -19,25 +17,17 @@ logger.setLevel(logging.INFO)
 # Initialize services lazily to avoid init timeout
 config = None
 s3_service = None
-sqs_client = None
+sqs_repository = None
 handler = None
 
 def get_handler():
-    global config, s3_service, sqs_client, handler
+    global config, s3_service, sqs_repository, handler
     if handler is None:
         config = AppConfig()
         s3_service = S3Service(config)
-        # Initialize SQS client for sending success messages
-        if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
-            sqs_client = boto3.client('sqs')  # Use IAM role in Lambda
-        else:
-            sqs_client = boto3.client('sqs', 
-                region_name=config.aws.region,
-                aws_access_key_id=config.aws.access_key_id,
-                aws_secret_access_key=config.aws.secret_access_key
-            )
+        sqs_repository = SQSRepository(config)
         handler = Handler(s3_service)
-    return handler, s3_service, sqs_client, config
+    return handler, s3_service, sqs_repository, config
 
 
 def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
@@ -84,7 +74,7 @@ def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             
             # Process the request (same as message_processor.py:56-60)
             logger.info(f"Processing request for content ID: {request.content_id}")
-            handler, s3_service, sqs_client, config = get_handler()
+            handler, s3_service, sqs_repository, config = get_handler()
             
             start_time = datetime.utcnow()
             processed_documents = handler.handle(request)
@@ -114,9 +104,9 @@ def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             )
             
             # Send to processing queue (same as message_processor.py:79-82)
-            sqs_client.send_message(
-                QueueUrl=config.sqs.processing_queue_url,
-                MessageBody=success_message.model_dump_json(by_alias=True)
+            sqs_repository.send_message(
+                queue_url=config.sqs.processing_queue_url,
+                message=success_message
             )
             
             # Lambda automatically deletes SQS message on success (no need for manual delete)
@@ -147,7 +137,7 @@ def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
                 message_body = json.loads(record['body'])
                 request = ProcessRequestMessage(**message_body)
                 
-                handler, s3_service, sqs_client, config = get_handler()
+                handler, s3_service, sqs_repository, config = get_handler()
                 
                 failure_message = ProcessFailureMessage(
                     contentId=request.content_id,
@@ -159,9 +149,9 @@ def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
                     failedStep=e.failed_step
                 )
                 
-                sqs_client.send_message(
-                    QueueUrl=config.sqs.processing_queue_url,
-                    MessageBody=failure_message.model_dump_json(by_alias=True)
+                sqs_repository.send_message(
+                    queue_url=config.sqs.processing_queue_url,
+                    message=failure_message
                 )
                 
                 logger.error(f"Processing failed for content ID: {request.content_id}")
@@ -185,7 +175,7 @@ def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
                 content_id = message_body.get('contentId', 'unknown')
                 content_type = message_body.get('contentType', 'document')
                 
-                handler, s3_service, sqs_client, config = get_handler()
+                handler, s3_service, sqs_repository, config = get_handler()
                 
                 failure_message = ProcessFailureMessage(
                     contentId=content_id,
@@ -197,9 +187,9 @@ def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
                     failedStep="message_processing"
                 )
                 
-                sqs_client.send_message(
-                    QueueUrl=config.sqs.processing_queue_url,
-                    MessageBody=failure_message.model_dump_json(by_alias=True)
+                sqs_repository.send_message(
+                    queue_url=config.sqs.processing_queue_url,
+                    message=failure_message
                 )
                 
                 logger.error(f"Unexpected error processing message: {e}")
